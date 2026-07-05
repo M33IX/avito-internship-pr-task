@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status
 
+from api.v1.dependencies import PRServiceDep
 from api.v1.errors import ErrorCode, ErrorResponse
 from api.v1.pull_requests.schemas import (
     CreatePrRequest,
@@ -40,7 +41,11 @@ router = APIRouter(prefix="/pullRequest", tags=["PullRequests"])
         },
     },
 )
-async def create_pr(request: CreatePrRequest) -> CreatePrResponse: ...
+async def create_pr(
+    request: CreatePrRequest,
+    service: PRServiceDep,
+) -> CreatePrResponse:
+    return await service.create_pr(request)
 
 
 @router.post(
@@ -56,7 +61,11 @@ async def create_pr(request: CreatePrRequest) -> CreatePrResponse: ...
         },
     },
 )
-async def merge_pr(request: MergePrRequest) -> MergePrResponse: ...
+async def merge_pr(
+    request: MergePrRequest,
+    service: PRServiceDep,
+) -> MergePrResponse:
+    return await service.merge_pr(request)
 
 
 @router.post(
@@ -111,4 +120,8 @@ async def merge_pr(request: MergePrRequest) -> MergePrResponse: ...
         },
     },
 )
-async def reassign_reviewer(request: ReassignPrRequest) -> ReassignPrResponse: ...
+async def reassign_reviewer(
+    request: ReassignPrRequest,
+    service: PRServiceDep,
+) -> ReassignPrResponse:
+    return await service.reassign_reviewer(request)
