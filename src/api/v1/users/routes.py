@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
+from api.v1.dependencies import UsersServiceDep
 from api.v1.errors import ErrorResponse
 from api.v1.users.schemas import (
     GetReviewResponse,
@@ -21,8 +22,9 @@ router = APIRouter(prefix="/users", tags=["Users"])
 )
 async def get_review(
     user_id: Annotated[str, Query(description="Идентификатор пользователя")],
+    service: UsersServiceDep,
 ) -> GetReviewResponse:
-    pass
+    return await service.get_user_prs(user_id)
 
 
 @router.post(
@@ -38,4 +40,8 @@ async def get_review(
         },
     },
 )
-async def set_is_active(request: SetIsActiveRequest) -> SetIsActiveResponse: ...
+async def set_is_active(
+    request: SetIsActiveRequest,
+    service: UsersServiceDep,
+) -> SetIsActiveResponse:
+    return await service.set_user_activity_status(request)

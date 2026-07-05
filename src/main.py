@@ -15,7 +15,7 @@ app = FastAPI(
     ],
 )
 app.include_router(api_router)
-app.add_exception_handler(ApiError, api_error_handler) #type:ignore
+app.add_exception_handler(ApiError, api_error_handler)  # type:ignore
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
