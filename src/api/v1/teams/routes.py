@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, status
 from api.v1.dependencies import TeamsServiceDep
 from api.v1.errors import ErrorCode, ErrorResponse
 from api.v1.teams.schemas import CreateTeamResponse, Team
+from api.v1.validation import TeamName
 
 router = APIRouter(prefix="/team", tags=["Teams"])
 
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/team", tags=["Teams"])
     },
 )
 async def team_get(
-    team_name: Annotated[str, Query(description="Уникальное имя команды")],
+    team_name: Annotated[TeamName, Query(description="Уникальное имя команды")],
     service: TeamsServiceDep,
 ) -> Team:
     return await service.get_team(team_name)
