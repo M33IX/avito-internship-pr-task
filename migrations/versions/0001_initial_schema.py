@@ -16,7 +16,7 @@ def upgrade() -> None:
 
     op.create_table(
         "teams",
-        sa.Column("team_name", sa.String(length=20), nullable=False),
+        sa.Column("team_name", sa.String(length=100), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -29,7 +29,7 @@ def upgrade() -> None:
         "users",
         sa.Column("user_id", sa.String(length=20), nullable=False),
         sa.Column("username", sa.String(length=100), nullable=False),
-        sa.Column("team_name", sa.String(length=20), nullable=False),
+        sa.Column("team_name", sa.String(length=100), nullable=False),
         sa.Column(
             "is_active",
             sa.Boolean(),
