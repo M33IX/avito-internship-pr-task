@@ -125,7 +125,7 @@ async def reassign_pull_request_reviewer(
     uow: IUnitOfWork,
     logger: ILogger,
 ) -> ReassignPullRequestReviewerResult:
-    pull_request = await uow.pull_requests.get_by_id(command.pull_request_id)
+    pull_request = await uow.pull_requests.get_by_id_for_update(command.pull_request_id)
     if pull_request is None:
         logger.warning(
             "pull request not found",
@@ -149,10 +149,8 @@ async def reassign_pull_request_reviewer(
         )
         raise PullRequestMergedError("cannot reassign on merged PR")
 
-    if not await uow.pull_request_reviewers.is_assigned(
-        pull_request_id=command.pull_request_id,
-        user_id=command.old_user_id,
-    ):
+    assigned_reviewer_ids = pull_request.assigned_reviewers
+    if command.old_user_id not in assigned_reviewer_ids:
         logger.warning(
             "reviewer is not assigned",
             pull_request_id=command.pull_request_id,
@@ -160,9 +158,6 @@ async def reassign_pull_request_reviewer(
         )
         raise ReviewerNotAssignedError("reviewer is not assigned to this PR")
 
-    assigned_reviewer_ids = await uow.pull_request_reviewers.list_reviewer_ids(
-        command.pull_request_id
-    )
     excluded_user_ids = {
         pull_request.author_id,
         command.old_user_id,
