@@ -133,6 +133,12 @@ class InMemoryPullRequestsRepository(IPullRequestsRepository):
             return None
         return self._with_reviewers(pull_request)
 
+    async def get_by_id_for_update(
+        self,
+        pull_request_id: str,
+    ) -> PullRequest | None:
+        return await self.get_by_id(pull_request_id)
+
     async def create(
         self,
         pull_request_id: str,
