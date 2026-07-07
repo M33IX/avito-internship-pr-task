@@ -1,8 +1,10 @@
+from typing import Protocol
+
 from core.domain.entities import PullRequest, PullRequestShort
 from core.interfaces.repositories.base import IRepository
 
 
-class IPullRequestsRepository(IRepository):
+class IPullRequestsRepository(IRepository, Protocol):
     async def exists(self, pull_request_id: str) -> bool: ...
 
     async def get_by_id(self, pull_request_id: str) -> PullRequest | None: ...

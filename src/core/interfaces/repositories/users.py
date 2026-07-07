@@ -1,8 +1,10 @@
+from typing import Protocol
+
 from core.domain.entities import TeamMember, User
 from core.interfaces.repositories.base import IRepository
 
 
-class IUsersRepository(IRepository):
+class IUsersRepository(IRepository, Protocol):
     async def get_by_id(self, user_id: str) -> User | None: ...
 
     async def upsert_many(

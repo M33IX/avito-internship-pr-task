@@ -1,7 +1,9 @@
+from typing import Protocol
+
 from core.interfaces.repositories.base import IRepository
 
 
-class IPullRequestReviewersRepository(IRepository):
+class IPullRequestReviewersRepository(IRepository, Protocol):
     async def list_reviewer_ids(self, pull_request_id: str) -> list[str]: ...
 
     async def add_reviewers(
