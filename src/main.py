@@ -5,6 +5,7 @@ from api import api_router
 from api.v1.errors import ApiError, api_error_handler, app_error_handler
 from config import get_settings
 from core.exceptions import AppError
+from infrastructure.metrics import PrometheusMiddleware
 
 settings = get_settings()
 
@@ -18,6 +19,7 @@ app = FastAPI(
         {"name": "Health"},
     ],
 )
+app.add_middleware(PrometheusMiddleware)
 app.include_router(api_router)
 app.add_exception_handler(ApiError, api_error_handler)  # type:ignore
 app.add_exception_handler(AppError, app_error_handler)  # type:ignore
