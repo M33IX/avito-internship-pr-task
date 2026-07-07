@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from config import Settings, get_settings
 from core.interfaces.logger import ILogger
 from infrastructure.in_memory import InMemoryStorage, InMemoryUnitOfWork
 from infrastructure.logging import StdLoggerAdapter
@@ -12,6 +13,10 @@ from services.users import UsersService
 
 storage = InMemoryStorage()
 logger = StdLoggerAdapter(logging.getLogger("pr_reviewer_assignment"))
+
+
+def get_app_settings() -> Settings:
+    return get_settings()
 
 
 def get_uow() -> InMemoryUnitOfWork:
@@ -34,6 +39,7 @@ async def get_users_service() -> UsersService:
     return UsersService(uow=get_uow(), logger=get_logger())
 
 
+SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 PRServiceDep = Annotated[PRService, Depends(get_pr_service)]
 TeamsServiceDep = Annotated[TeamsService, Depends(get_teams_service)]
 UsersServiceDep = Annotated[UsersService, Depends(get_users_service)]
