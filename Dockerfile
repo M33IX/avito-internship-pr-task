@@ -37,7 +37,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 WORKDIR /app
 
 RUN groupadd --system app \
-    && useradd --system --gid app --home-dir /app app
+    && useradd --system --gid app --home-dir /app app \
+    && mkdir -p /var/log/avito-internship \
+    && chown -R app:app /var/log/avito-internship
 
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --chown=app:app src /app/src

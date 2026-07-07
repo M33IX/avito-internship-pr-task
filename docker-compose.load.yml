@@ -1,0 +1,71 @@
+services:
+  postgres:
+    cpus: "1.0"
+    mem_limit: "1g"
+    memswap_limit: "1g"
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "max_connections=50"
+
+  app:
+    cpus: "1.0"
+    mem_limit: "1g"
+    memswap_limit: "1g"
+    environment:
+      DATABASE_POOL_SIZE: "5"
+      DATABASE_MAX_OVERFLOW: "10"
+    command:
+      - "sh"
+      - "-c"
+      - >
+        uvicorn main:app --host 0.0.0.0 --port 8080 --no-access-log
+        2>&1 | tee -a /var/log/avito-internship/app.log
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  k6:
+    image: grafana/k6:latest
+    container_name: avito-internship-k6
+    profiles:
+      - load
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      BASE_URL: "http://app:8080"
+      WORKLOAD: "api_mix"
+      START_RATE: "1"
+      TARGET_RATE: "20"
+      DURATION: "5m"
+      RAMP_UP: "1m"
+      RAMP_DOWN: "30s"
+      PRE_ALLOCATED_VUS: "50"
+      MAX_VUS: "200"
+      SLEEP_MS: "100"
+    volumes:
+      - ./load-tests/k6:/scripts:ro
+      - ./load-tests/results:/results
+    command:
+      - "run"
+      - "--summary-export"
+      - "/results/summary.json"
+      - "/scripts/pr_reviewer_assignment.js"
