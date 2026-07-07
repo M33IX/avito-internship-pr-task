@@ -20,7 +20,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from core.domain.enums.pull_requests import PRStatus
 
 USER_ID_LENGTH = 20
-TEAM_NAME_LENGTH = 20
+TEAM_NAME_LENGTH = 100
 USERNAME_LENGTH = 100
 PULL_REQUEST_ID_LENGTH = 20
 PULL_REQUEST_NAME_LENGTH = 100
