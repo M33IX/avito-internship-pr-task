@@ -38,8 +38,8 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_users_team_active
-    ON users(team_name, is_active);
+CREATE INDEX idx_users_team_active_user_id
+    ON users(team_name, is_active, user_id);
 
 CREATE TABLE pull_requests (
     pull_request_id VARCHAR(20) PRIMARY KEY,
@@ -74,8 +74,8 @@ CREATE TABLE pull_request_reviewers (
     UNIQUE (pull_request_id, slot)
 );
 
-CREATE INDEX idx_pull_request_reviewers_reviewer_id
-    ON pull_request_reviewers(reviewer_id);
+CREATE INDEX idx_pull_request_reviewers_reviewer_id_pull_request_id
+    ON pull_request_reviewers(reviewer_id, pull_request_id);
 
 
 ## Основные юзкейсы
