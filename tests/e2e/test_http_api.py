@@ -179,6 +179,92 @@ async def test_duplicate_team_returns_contract_error(
 
 
 @pytest.mark.anyio
+async def test_deactivate_team_safely_reassigns_open_pull_requests(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await create_team(api_client)
+    await create_team(
+        api_client,
+        team_payload(
+            team_name="platform",
+            members=[
+                {"user_id": "p1", "username": "Platform One", "is_active": True},
+                {"user_id": "p2", "username": "Platform Two", "is_active": True},
+            ],
+        ),
+    )
+    created_pr = await create_pr(api_client)
+    old_reviewers = set(created_pr["pr"]["assigned_reviewers"])
+
+    response = await api_client.post(
+        "/team/deactivate",
+        json={
+            "team_name": "backend",
+            "replacement_team_name": "platform",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert all(member["is_active"] is False for member in payload["team"]["members"])
+    assert {
+        reassignment["old_user_id"] for reassignment in payload["reassignments"]
+    } == old_reviewers
+    assert {
+        reassignment["new_user_id"] for reassignment in payload["reassignments"]
+    } == {"p1", "p2"}
+
+    p1_reviews = await api_client.get("/users/getReview", params={"user_id": "p1"})
+    p2_reviews = await api_client.get("/users/getReview", params={"user_id": "p2"})
+    assert p1_reviews.status_code == 200
+    assert p2_reviews.status_code == 200
+    assert p1_reviews.json()["pull_requests"][0]["pull_request_id"] == "pr1"
+    assert p2_reviews.json()["pull_requests"][0]["pull_request_id"] == "pr1"
+
+
+@pytest.mark.anyio
+async def test_deactivate_team_without_enough_candidates_returns_contract_error(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await create_team(api_client)
+    await create_team(
+        api_client,
+        team_payload(
+            team_name="platform",
+            members=[
+                {"user_id": "p1", "username": "Platform One", "is_active": True},
+            ],
+        ),
+    )
+    await create_pr(api_client)
+
+    response = await api_client.post(
+        "/team/deactivate",
+        json={
+            "team_name": "backend",
+            "replacement_team_name": "platform",
+        },
+    )
+
+    assert_error(
+        response,
+        status_code=409,
+        code="NO_CANDIDATE",
+        message="no active replacement candidate in team",
+    )
+
+    team = await api_client.get("/team/get", params={"team_name": "backend"})
+    assert team.status_code == 200
+    assert [member["is_active"] for member in team.json()["members"]] == [
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
+
+
+@pytest.mark.anyio
 async def test_missing_team_returns_contract_error(
     api_client: httpx.AsyncClient,
 ) -> None:
@@ -362,9 +448,75 @@ async def test_openapi_contains_contract_paths(api_client: httpx.AsyncClient) ->
     assert response.status_code == 200
     paths = response.json()["paths"]
     assert "/team/add" in paths
+    assert "/team/deactivate" in paths
     assert "/team/get" in paths
     assert "/users/setIsActive" in paths
     assert "/users/getReview" in paths
     assert "/pullRequest/create" in paths
     assert "/pullRequest/reassign" in paths
     assert "/pullRequest/merge" in paths
+    assert "/health" in paths
+    assert "/stats" in paths
+
+
+@pytest.mark.anyio
+async def test_health_returns_ok(api_client: httpx.AsyncClient) -> None:
+    response = await api_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "database": "ok",
+    }
+
+
+@pytest.mark.anyio
+async def test_stats_returns_service_aggregates(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await create_team(
+        api_client,
+        team_payload(
+            members=[
+                {"user_id": "u1", "username": "Author", "is_active": True},
+                {"user_id": "u2", "username": "Reviewer Two", "is_active": True},
+                {"user_id": "u3", "username": "Reviewer Three", "is_active": True},
+                {"user_id": "u5", "username": "Inactive", "is_active": False},
+            ]
+        ),
+    )
+    await create_pr(api_client)
+
+    response = await api_client.get("/stats")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "teams": 1,
+        "users": 4,
+        "active_users": 3,
+        "inactive_users": 1,
+        "pull_requests": 1,
+        "open_pull_requests": 1,
+        "merged_pull_requests": 0,
+        "assignments": 2,
+        "assignments_by_user": [
+            {"user_id": "u2", "pull_requests": 1},
+            {"user_id": "u3", "pull_requests": 1},
+        ],
+        "reviewers_by_pull_request": [
+            {"pull_request_id": "pr1", "reviewers": 2},
+        ],
+    }
+
+
+@pytest.mark.anyio
+async def test_metrics_endpoint_exposes_prometheus_metrics(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await api_client.get("/health")
+
+    response = await api_client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "app_http_requests_total" in response.text

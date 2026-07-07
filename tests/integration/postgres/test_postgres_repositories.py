@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import asdict
 from typing import Any
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from core.domain.entities import TeamMember
 from core.domain.enums.pull_requests import PRStatus
+from core.domain.value_objects import PullRequestReviewerReplacement
 from infrastructure.postgres.models import PullRequestReviewerModel
 from infrastructure.postgres.repositories import (
     PostgresPullRequestReviewersRepository,
@@ -155,6 +157,17 @@ async def test_users_repository_upsert_update_move_and_list_active(
 
     assert [user.user_id for user in active_backend_users] == ["u3"]
     assert [user.user_id for user in active_platform_users] == ["u2"]
+    assert await users.count() == 3
+    assert await users.count_by_activity(is_active=True) == 3
+    assert await users.count_by_activity(is_active=False) == 0
+
+    await users.deactivate_by_team("backend")
+    active_backend_users = await users.list_active_by_team("backend")
+    deactivated_user = await users.get_by_id("u1")
+
+    assert active_backend_users == []
+    assert deactivated_user is not None
+    assert deactivated_user.is_active is False
 
 
 async def test_pull_requests_repository_crud_merge_and_list_by_reviewer(
@@ -170,6 +183,9 @@ async def test_pull_requests_repository_crud_merge_and_list_by_reviewer(
     assert pull_request is not None
     assert pull_request.assigned_reviewers == ["u3", "u2"]
 
+    open_by_reviewer = await pull_requests.list_open_by_reviewer_ids({"u2"})
+    assert [pr.pull_request_id for pr in open_by_reviewer] == ["pr1"]
+
     merged = await pull_requests.mark_merged("pr1")
     assert merged is not None
     assert merged.status == PRStatus.MERGED
@@ -181,6 +197,10 @@ async def test_pull_requests_repository_crud_merge_and_list_by_reviewer(
 
     reviewer_prs = await pull_requests.list_by_reviewer("u2")
     assert [pr.pull_request_id for pr in reviewer_prs] == ["pr1"]
+    assert await pull_requests.list_open_by_reviewer_ids({"u2"}) == []
+    assert await pull_requests.count() == 1
+    assert await pull_requests.count_by_status(PRStatus.OPEN) == 0
+    assert await pull_requests.count_by_status(PRStatus.MERGED) == 1
 
 
 async def test_reviewers_repository_add_is_assigned_and_replace_preserves_slot(
@@ -193,10 +213,14 @@ async def test_reviewers_repository_add_is_assigned_and_replace_preserves_slot(
     assert await reviewers.is_assigned("pr1", "u2") is True
     assert await reviewers.is_assigned("pr1", "u4") is False
 
-    await reviewers.replace_reviewer(
-        pull_request_id="pr1",
-        old_user_id="u2",
-        new_user_id="u4",
+    await reviewers.replace_reviewers(
+        [
+            PullRequestReviewerReplacement(
+                pull_request_id="pr1",
+                old_user_id="u2",
+                new_user_id="u4",
+            )
+        ]
     )
 
     pull_request = await pull_requests.get_by_id("pr1")
@@ -209,6 +233,14 @@ async def test_reviewers_repository_add_is_assigned_and_replace_preserves_slot(
     assert pull_request is not None
     assert pull_request.assigned_reviewers == ["u4", "u3"]
     assert replacement_slot == 1
+    assert await reviewers.count() == 2
+    assert [asdict(item) for item in await reviewers.count_by_user()] == [
+        {"user_id": "u3", "pull_requests": 1},
+        {"user_id": "u4", "pull_requests": 1},
+    ]
+    assert [asdict(item) for item in await reviewers.count_by_pull_request()] == [
+        {"pull_request_id": "pr1", "reviewers": 2},
+    ]
 
 
 async def test_uow_commits_successful_context(
@@ -273,4 +305,9 @@ async def test_repository_queries_do_not_have_n_plus_one(
     with statement_counter() as counter:
         reviewer_prs = await pull_requests.list_by_reviewer("u2")
     assert [pr.pull_request_id for pr in reviewer_prs] == ["pr1", "pr2"]
+    assert counter.count == 1
+
+    with statement_counter() as counter:
+        open_pull_requests = await pull_requests.list_open_by_reviewer_ids({"u2", "u3"})
+    assert [pr.pull_request_id for pr in open_pull_requests] == ["pr1", "pr2"]
     assert counter.count == 1
