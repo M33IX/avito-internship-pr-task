@@ -9,6 +9,7 @@ from api.v1.users.schemas import (
     SetIsActiveRequest,
     SetIsActiveResponse,
 )
+from api.v1.validation import UserId
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
     status_code=status.HTTP_200_OK,
 )
 async def get_review(
-    user_id: Annotated[str, Query(description="Идентификатор пользователя")],
+    user_id: Annotated[UserId, Query(description="Идентификатор пользователя")],
     service: UsersServiceDep,
 ) -> GetReviewResponse:
     return await service.get_user_prs(user_id)

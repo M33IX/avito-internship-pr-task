@@ -2,13 +2,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.v1.validation import PullRequestId, PullRequestName, UserId
 from core.domain.enums.pull_requests import PRStatus
 
 
 class PullRequestShort(BaseModel):
-    pull_request_id: str
-    pull_request_name: str
-    author_id: str
+    pull_request_id: PullRequestId
+    pull_request_name: PullRequestName
+    author_id: UserId
     status: PRStatus = Field(examples=[PRStatus.OPEN])
 
     model_config = ConfigDict(
@@ -24,9 +25,9 @@ class PullRequestShort(BaseModel):
 
 
 class CreatePrRequest(BaseModel):
-    pull_request_id: str = Field(examples=["pr-1001"])
-    pull_request_name: str = Field(examples=["Add search"])
-    author_id: str = Field(examples=["u1"])
+    pull_request_id: PullRequestId = Field(examples=["pr-1001"])
+    pull_request_name: PullRequestName = Field(examples=["Add search"])
+    author_id: UserId = Field(examples=["u1"])
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -40,7 +41,7 @@ class CreatePrRequest(BaseModel):
 
 
 class PullRequest(PullRequestShort):
-    assigned_reviewers: list[str]
+    assigned_reviewers: list[UserId]
     created_at: datetime | None = Field(default=None, alias="createdAt")
     merged_at: datetime | None = Field(default=None, alias="mergedAt")
 
@@ -79,7 +80,7 @@ class CreatePrResponse(BaseModel):
 
 
 class MergePrRequest(BaseModel):
-    pull_request_id: str = Field(examples=["pr-1001"])
+    pull_request_id: PullRequestId = Field(examples=["pr-1001"])
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -110,8 +111,8 @@ class MergePrResponse(BaseModel):
 
 
 class ReassignPrRequest(BaseModel):
-    pull_request_id: str = Field(examples=["pr-1001"])
-    old_user_id: str = Field(examples=["u2"])
+    pull_request_id: PullRequestId = Field(examples=["pr-1001"])
+    old_user_id: UserId = Field(examples=["u2"])
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -124,7 +125,7 @@ class ReassignPrRequest(BaseModel):
 
 
 class ReassignPrResponse(CreatePrResponse):
-    replaced_by: str = Field(examples=["u5"])
+    replaced_by: UserId = Field(examples=["u5"])
 
     model_config = ConfigDict(
         json_schema_extra={

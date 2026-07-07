@@ -9,3 +9,11 @@ wheels/
 # Virtual environments
 .venv
 .ruff_cache
+.mypy_cache
+
+# Local environment
+.env
+
+# Load-test output
+load-tests/results/*
+!load-tests/results/.gitkeep

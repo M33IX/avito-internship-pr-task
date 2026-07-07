@@ -1,12 +1,13 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.v1.pull_requests.schemas import PullRequestShort
+from api.v1.validation import TeamName, UserId, Username
 
 
 class User(BaseModel):
-    user_id: str = Field(examples=["u2"])
-    username: str = Field(examples=["Bob"])
-    team_name: str = Field(examples=["backend"])
+    user_id: UserId = Field(examples=["u2"])
+    username: Username = Field(examples=["Bob"])
+    team_name: TeamName = Field(examples=["backend"])
     is_active: bool = Field(examples=[True])
 
     model_config = ConfigDict(
@@ -22,7 +23,7 @@ class User(BaseModel):
 
 
 class SetIsActiveRequest(BaseModel):
-    user_id: str = Field(examples=["u2"])
+    user_id: UserId = Field(examples=["u2"])
     is_active: bool = Field(examples=[False])
 
     model_config = ConfigDict(
@@ -53,7 +54,7 @@ class SetIsActiveResponse(BaseModel):
 
 
 class GetReviewResponse(BaseModel):
-    user_id: str
+    user_id: UserId
     pull_requests: list[PullRequestShort]
 
     model_config = ConfigDict(

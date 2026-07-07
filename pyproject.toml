@@ -5,8 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.18.5",
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.139.0",
+    "loguru>=0.7.3",
+    "prometheus-client>=0.23.1",
+    "pydantic-settings>=2.14.2",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.50.0",
 ]
@@ -59,8 +63,27 @@ select = [
     "I",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: unit tests for core use cases and mappers",
+    "integration: integration tests for PostgreSQL repositories and migrations",
+    "e2e: end-to-end HTTP API tests",
+]
+
+[tool.mypy]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["testcontainers.*"]
+ignore_missing_imports = true
+
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.1.0",
     "pytest>=9.1.1",
     "ruff>=0.15.20",
+    "testcontainers[postgres]>=4.9.0",
 ]
