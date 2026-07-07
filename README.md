@@ -7,6 +7,23 @@
 - Postgres 18
 - uv
 - ruff
+- mypy
+
+## Запуск
+
+Сервис и Postgres поднимаются через Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+При старте контейнера приложения выполняется:
+
+```bash
+alembic upgrade head
+```
+
+После запуска сервис доступен на `http://localhost:8080`.
 
 ## Принятые допущения
 
