@@ -7,6 +7,11 @@ class IPullRequestsRepository(IRepository):
 
     async def get_by_id(self, pull_request_id: str) -> PullRequest | None: ...
 
+    async def get_by_id_for_update(
+        self,
+        pull_request_id: str,
+    ) -> PullRequest | None: ...
+
     async def create(
         self,
         pull_request_id: str,
