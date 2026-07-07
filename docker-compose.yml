@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: avito-internship-postgres
+    environment:
+      POSTGRES_DB: pr_reviewer_assignment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d pr_reviewer_assignment",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avito-internship-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/pr_reviewer_assignment"
+      DATABASE_ECHO: "false"
+      DATABASE_POOL_SIZE: "5"
+      DATABASE_MAX_OVERFLOW: "10"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
