@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import RowMapping
 
@@ -29,6 +29,64 @@ class PostgresUsersRepository(PostgresRepository, IUsersRepository):
         if row is None:
             return None
         return _user_from_row(row)
+
+    async def get_with_active_teammates(
+        self,
+        user_id: str,
+    ) -> tuple[User, list[User]] | None:
+        author = (
+            select(
+                UserModel.user_id,
+                UserModel.username,
+                UserModel.team_name,
+                UserModel.is_active,
+            )
+            .where(UserModel.user_id == user_id)
+            .cte("author")
+        )
+        stmt = (
+            select(
+                author.c.user_id.label("author_user_id"),
+                author.c.username.label("author_username"),
+                author.c.team_name.label("author_team_name"),
+                author.c.is_active.label("author_is_active"),
+                UserModel.user_id.label("candidate_user_id"),
+                UserModel.username.label("candidate_username"),
+                UserModel.team_name.label("candidate_team_name"),
+                UserModel.is_active.label("candidate_is_active"),
+            )
+            .select_from(author)
+            .outerjoin(
+                UserModel,
+                and_(
+                    UserModel.team_name == author.c.team_name,
+                    UserModel.is_active.is_(True),
+                    UserModel.user_id != author.c.user_id,
+                ),
+            )
+            .order_by(UserModel.user_id)
+        )
+        rows = (await self._session.execute(stmt)).mappings().all()
+        if not rows:
+            return None
+
+        author_user = User(
+            user_id=rows[0]["author_user_id"],
+            username=rows[0]["author_username"],
+            team_name=rows[0]["author_team_name"],
+            is_active=rows[0]["author_is_active"],
+        )
+        candidates = [
+            User(
+                user_id=row["candidate_user_id"],
+                username=row["candidate_username"],
+                team_name=row["candidate_team_name"],
+                is_active=row["candidate_is_active"],
+            )
+            for row in rows
+            if row["candidate_user_id"] is not None
+        ]
+        return author_user, candidates
 
     async def upsert_many(
         self,
@@ -84,6 +142,20 @@ class PostgresUsersRepository(PostgresRepository, IUsersRepository):
             return None
         return _user_from_row(row)
 
+    async def deactivate_by_team(self, team_name: str) -> None:
+        stmt = (
+            update(UserModel)
+            .where(
+                UserModel.team_name == team_name,
+                UserModel.is_active.is_(True),
+            )
+            .values(
+                is_active=False,
+                updated_at=func.now(),
+            )
+        )
+        await self._session.execute(stmt)
+
     async def list_active_by_team(
         self,
         team_name: str,
@@ -110,6 +182,18 @@ class PostgresUsersRepository(PostgresRepository, IUsersRepository):
 
         rows = (await self._session.execute(stmt)).mappings().all()
         return [_user_from_row(row) for row in rows]
+
+    async def count(self) -> int:
+        stmt = select(func.count()).select_from(UserModel)
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def count_by_activity(self, *, is_active: bool) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(UserModel)
+            .where(UserModel.is_active.is_(is_active))
+        )
+        return int(await self._session.scalar(stmt) or 0)
 
 
 def _user_from_row(row: RowData) -> User:

@@ -1,8 +1,9 @@
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import case, exists, func, insert, select, update
+from sqlalchemy import case, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
 
 from core.domain.entities import PullRequest, PullRequestShort
@@ -11,6 +12,7 @@ from core.interfaces.repositories import IPullRequestsRepository
 from infrastructure.postgres.models import (
     PullRequestModel,
     PullRequestReviewerModel,
+    UserModel,
 )
 from infrastructure.postgres.repositories.base import PostgresRepository
 
@@ -54,13 +56,41 @@ class PostgresPullRequestsRepository(PostgresRepository, IPullRequestsRepository
         pull_request_name: str,
         author_id: str,
     ) -> PullRequest:
+        pull_request = await self.create_if_author_exists(
+            pull_request_id=pull_request_id,
+            pull_request_name=pull_request_name,
+            author_id=author_id,
+        )
+        if pull_request is None:
+            raise ValueError("pull request already exists or author is missing")
+
+        return pull_request
+
+    async def create_if_author_exists(
+        self,
+        pull_request_id: str,
+        pull_request_name: str,
+        author_id: str,
+    ) -> PullRequest | None:
+        values = select(
+            literal(pull_request_id),
+            literal(pull_request_name),
+            UserModel.user_id,
+            literal(PRStatus.OPEN),
+        ).where(UserModel.user_id == author_id)
         stmt = (
-            insert(PullRequestModel)
-            .values(
-                pull_request_id=pull_request_id,
-                pull_request_name=pull_request_name,
-                author_id=author_id,
-                status=PRStatus.OPEN,
+            pg_insert(PullRequestModel)
+            .from_select(
+                [
+                    PullRequestModel.pull_request_id,
+                    PullRequestModel.pull_request_name,
+                    PullRequestModel.author_id,
+                    PullRequestModel.status,
+                ],
+                values,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[PullRequestModel.pull_request_id],
             )
             .returning(
                 PullRequestModel.pull_request_id,
@@ -71,10 +101,13 @@ class PostgresPullRequestsRepository(PostgresRepository, IPullRequestsRepository
                 PullRequestModel.merged_at,
             )
         )
-        row = (await self._session.execute(stmt)).mappings().one()
+        row = (await self._session.execute(stmt)).mappings().one_or_none()
+        if row is None:
+            return None
         return _pull_request_from_row({**row, "assigned_reviewers": []})
 
     async def mark_merged(self, pull_request_id: str) -> PullRequest | None:
+        reviewers = _reviewers_aggregation()
         stmt = (
             update(PullRequestModel)
             .where(PullRequestModel.pull_request_id == pull_request_id)
@@ -88,12 +121,34 @@ class PostgresPullRequestsRepository(PostgresRepository, IPullRequestsRepository
                     else_=func.now(),
                 ),
             )
-            .returning(PullRequestModel.pull_request_id)
+            .returning(
+                PullRequestModel.pull_request_id,
+                PullRequestModel.pull_request_name,
+                PullRequestModel.author_id,
+                PullRequestModel.status,
+                PullRequestModel.created_at,
+                PullRequestModel.merged_at,
+            )
+            .cte("updated_pull_request")
         )
-        updated_pull_request_id = await self._session.scalar(stmt)
-        if updated_pull_request_id is None:
+        result = await self._session.execute(
+            select(
+                stmt.c.pull_request_id,
+                stmt.c.pull_request_name,
+                stmt.c.author_id,
+                stmt.c.status,
+                stmt.c.created_at,
+                stmt.c.merged_at,
+                reviewers.c.assigned_reviewers,
+            ).outerjoin(
+                reviewers,
+                reviewers.c.pull_request_id == stmt.c.pull_request_id,
+            )
+        )
+        row = result.mappings().one_or_none()
+        if row is None:
             return None
-        return await self.get_by_id(updated_pull_request_id)
+        return _pull_request_from_row(row)
 
     async def list_by_reviewer(self, user_id: str) -> list[PullRequestShort]:
         stmt = (
@@ -116,25 +171,68 @@ class PostgresPullRequestsRepository(PostgresRepository, IPullRequestsRepository
         rows = (await self._session.execute(stmt)).mappings().all()
         return [_pull_request_short_from_row(row) for row in rows]
 
+    async def list_open_by_reviewer_ids(
+        self,
+        reviewer_ids: set[str],
+        *,
+        for_update: bool = False,
+    ) -> list[PullRequest]:
+        if not reviewer_ids:
+            return []
+
+        reviewers = _reviewers_aggregation()
+        target_pull_request_ids = (
+            select(PullRequestReviewerModel.pull_request_id)
+            .where(PullRequestReviewerModel.reviewer_id.in_(reviewer_ids))
+            .subquery()
+        )
+        stmt = (
+            select(
+                PullRequestModel.pull_request_id,
+                PullRequestModel.pull_request_name,
+                PullRequestModel.author_id,
+                PullRequestModel.status,
+                PullRequestModel.created_at,
+                PullRequestModel.merged_at,
+                reviewers.c.assigned_reviewers,
+            )
+            .outerjoin(
+                reviewers,
+                reviewers.c.pull_request_id == PullRequestModel.pull_request_id,
+            )
+            .where(
+                PullRequestModel.status == PRStatus.OPEN,
+                PullRequestModel.pull_request_id.in_(
+                    select(target_pull_request_ids.c.pull_request_id)
+                ),
+            )
+            .order_by(PullRequestModel.pull_request_id)
+        )
+        if for_update:
+            stmt = stmt.with_for_update(of=PullRequestModel.__table__)
+
+        rows = (await self._session.execute(stmt)).mappings().all()
+        return [_pull_request_from_row(row) for row in rows]
+
+    async def count(self) -> int:
+        stmt = select(func.count()).select_from(PullRequestModel)
+        return int(await self._session.scalar(stmt) or 0)
+
+    async def count_by_status(self, status: PRStatus) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(PullRequestModel)
+            .where(PullRequestModel.status == status)
+        )
+        return int(await self._session.scalar(stmt) or 0)
+
 
 def _select_pull_request_by_id(
     pull_request_id: str,
     *,
     for_update: bool = False,
 ):
-    reviewers = (
-        select(
-            PullRequestReviewerModel.pull_request_id,
-            func.array_agg(
-                aggregate_order_by(
-                    PullRequestReviewerModel.reviewer_id,
-                    PullRequestReviewerModel.slot,
-                )
-            ).label("assigned_reviewers"),
-        )
-        .group_by(PullRequestReviewerModel.pull_request_id)
-        .subquery()
-    )
+    reviewers = _reviewers_aggregation()
     stmt = (
         select(
             PullRequestModel.pull_request_id,
@@ -154,6 +252,22 @@ def _select_pull_request_by_id(
     if for_update:
         stmt = stmt.with_for_update(of=PullRequestModel.__table__)
     return stmt
+
+
+def _reviewers_aggregation():
+    return (
+        select(
+            PullRequestReviewerModel.pull_request_id,
+            func.array_agg(
+                aggregate_order_by(
+                    PullRequestReviewerModel.reviewer_id,
+                    PullRequestReviewerModel.slot,
+                )
+            ).label("assigned_reviewers"),
+        )
+        .group_by(PullRequestReviewerModel.pull_request_id)
+        .subquery()
+    )
 
 
 def _pull_request_from_row(row: RowData) -> PullRequest:

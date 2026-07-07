@@ -44,50 +44,58 @@ async def create_pull_request(
     uow: IUnitOfWork,
     logger: ILogger,
 ) -> PullRequest:
-    if await uow.pull_requests.exists(command.pull_request_id):
+    pull_request = await uow.pull_requests.create_if_author_exists(
+        pull_request_id=command.pull_request_id,
+        pull_request_name=command.pull_request_name,
+        author_id=command.author_id,
+    )
+    if pull_request is None and await uow.pull_requests.exists(
+        command.pull_request_id
+    ):
         logger.warning(
             "pull request already exists",
             pull_request_id=command.pull_request_id,
         )
         raise PullRequestAlreadyExistsError("PR id already exists")
-
-    author = await uow.users.get_by_id(command.author_id)
-    if author is None:
+    if pull_request is None:
         logger.warning(
             "pull request author not found",
             author_id=command.author_id,
         )
         raise UserNotFoundError("resource not found")
 
-    candidates = await uow.users.list_active_by_team(
-        team_name=author.team_name,
-        exclude_user_ids={author.user_id},
+    author_with_candidates = await uow.users.get_with_active_teammates(
+        command.author_id
     )
+    if author_with_candidates is None:
+        logger.warning(
+            "pull request author not found",
+            author_id=command.author_id,
+        )
+        raise UserNotFoundError("resource not found")
+
+    _, candidates = author_with_candidates
     reviewers = random.sample(
         candidates,
         k=min(2, len(candidates)),
     )
+    reviewer_ids = [reviewer.user_id for reviewer in reviewers]
 
-    pull_request = await uow.pull_requests.create(
-        pull_request_id=command.pull_request_id,
-        pull_request_name=command.pull_request_name,
-        author_id=command.author_id,
-    )
     await uow.pull_request_reviewers.add_reviewers(
         pull_request_id=pull_request.pull_request_id,
-        reviewer_ids=[reviewer.user_id for reviewer in reviewers],
+        reviewer_ids=reviewer_ids,
     )
     await uow.commit()
 
-    created_pull_request = await uow.pull_requests.get_by_id(
-        pull_request.pull_request_id
+    created_pull_request = PullRequest(
+        pull_request_id=pull_request.pull_request_id,
+        pull_request_name=pull_request.pull_request_name,
+        author_id=pull_request.author_id,
+        status=pull_request.status,
+        assigned_reviewers=reviewer_ids,
+        created_at=pull_request.created_at,
+        merged_at=pull_request.merged_at,
     )
-    if created_pull_request is None:
-        logger.error(
-            "created pull request not found",
-            pull_request_id=pull_request.pull_request_id,
-        )
-        raise PullRequestNotFoundError("resource not found")
 
     logger.info(
         "pull request created",
@@ -183,13 +191,18 @@ async def reassign_pull_request_reviewer(
     )
     await uow.commit()
 
-    updated_pull_request = await uow.pull_requests.get_by_id(command.pull_request_id)
-    if updated_pull_request is None:
-        logger.error(
-            "updated pull request not found",
-            pull_request_id=command.pull_request_id,
-        )
-        raise PullRequestNotFoundError("resource not found")
+    updated_pull_request = PullRequest(
+        pull_request_id=pull_request.pull_request_id,
+        pull_request_name=pull_request.pull_request_name,
+        author_id=pull_request.author_id,
+        status=pull_request.status,
+        assigned_reviewers=[
+            new_reviewer.user_id if user_id == command.old_user_id else user_id
+            for user_id in assigned_reviewer_ids
+        ],
+        created_at=pull_request.created_at,
+        merged_at=pull_request.merged_at,
+    )
 
     logger.info(
         "pull request reviewer reassigned",

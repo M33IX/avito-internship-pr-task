@@ -1,4 +1,4 @@
-from sqlalchemy import exists, insert, select
+from sqlalchemy import exists, func, insert, select
 
 from core.domain.entities import Team, TeamMember
 from core.interfaces.repositories import ITeamsRepository
@@ -43,3 +43,7 @@ class PostgresTeamsRepository(PostgresRepository, ITeamsRepository):
     async def create(self, team_name: str) -> None:
         stmt = insert(TeamModel).values(team_name=team_name)
         await self._session.execute(stmt)
+
+    async def count(self) -> int:
+        stmt = select(func.count()).select_from(TeamModel)
+        return int(await self._session.scalar(stmt) or 0)

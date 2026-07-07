@@ -1,11 +1,7 @@
 from dataclasses import dataclass
 
-from core.domain.entities import (
-    PullRequest,
-    PullRequestReviewerReplacement,
-    Team,
-    TeamMember,
-)
+from core.domain.entities import PullRequest, Team, TeamMember
+from core.domain.value_objects import PullRequestReviewerReplacement
 from core.exceptions import (
     NoReviewerCandidateError,
     TeamAlreadyExistsError,
@@ -76,10 +72,19 @@ async def add_team(
     )
     await uow.commit()
 
-    created_team = await uow.teams.get_by_name(command.team_name)
-    if created_team is None:
-        logger.error("created team not found", team_name=command.team_name)
-        raise TeamNotFoundError("resource not found")
+    members = [
+        TeamMember(
+            user_id=member.user_id,
+            username=member.username,
+            is_active=member.is_active,
+        )
+        for member in command.members
+    ]
+    members.sort(key=lambda member: member.user_id)
+    created_team = Team(
+        team_name=command.team_name,
+        members=members,
+    )
 
     logger.info(
         "team created",
@@ -126,10 +131,17 @@ async def deactivate_team(
     await uow.users.deactivate_by_team(command.team_name)
     await uow.commit()
 
-    updated_team = await uow.teams.get_by_name(command.team_name)
-    if updated_team is None:
-        logger.error("deactivated team not found", team_name=command.team_name)
-        raise TeamNotFoundError("resource not found")
+    updated_team = Team(
+        team_name=team.team_name,
+        members=[
+            TeamMember(
+                user_id=member.user_id,
+                username=member.username,
+                is_active=False,
+            )
+            for member in team.members
+        ],
+    )
 
     logger.info(
         "team deactivated",
