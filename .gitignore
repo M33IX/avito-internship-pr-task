@@ -13,3 +13,7 @@ wheels/
 
 # Local environment
 .env
+
+# Load-test output
+load-tests/results/*
+!load-tests/results/.gitkeep
