@@ -1,42 +1,54 @@
 import logging
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends
 
 from config import Settings, get_settings
 from core.interfaces.logger import ILogger
-from infrastructure.in_memory import InMemoryStorage, InMemoryUnitOfWork
 from infrastructure.logging import StdLoggerAdapter
+from infrastructure.postgres import (
+    PostgresUnitOfWork,
+    create_postgres_engine,
+    create_session_factory,
+    iter_uow,
+)
 from services.pull_requests import PRService
 from services.teams import TeamsService
 from services.users import UsersService
 
-storage = InMemoryStorage()
 logger = StdLoggerAdapter(logging.getLogger("pr_reviewer_assignment"))
+engine = create_postgres_engine()
+session_factory = create_session_factory(engine)
 
 
 def get_app_settings() -> Settings:
     return get_settings()
 
 
-def get_uow() -> InMemoryUnitOfWork:
-    return InMemoryUnitOfWork(storage)
+async def get_uow() -> AsyncIterator[PostgresUnitOfWork]:
+    async for uow in iter_uow(session_factory):
+        yield uow
 
 
 def get_logger() -> ILogger:
     return logger
 
 
-async def get_pr_service() -> PRService:
-    return PRService(uow=get_uow(), logger=get_logger())
+UowDep = Annotated[PostgresUnitOfWork, Depends(get_uow)]
+LoggerDep = Annotated[ILogger, Depends(get_logger)]
 
 
-async def get_teams_service() -> TeamsService:
-    return TeamsService(uow=get_uow(), logger=get_logger())
+async def get_pr_service(uow: UowDep, logger: LoggerDep) -> PRService:
+    return PRService(uow=uow, logger=logger)
 
 
-async def get_users_service() -> UsersService:
-    return UsersService(uow=get_uow(), logger=get_logger())
+async def get_teams_service(uow: UowDep, logger: LoggerDep) -> TeamsService:
+    return TeamsService(uow=uow, logger=logger)
+
+
+async def get_users_service(uow: UowDep, logger: LoggerDep) -> UsersService:
+    return UsersService(uow=uow, logger=logger)
 
 
 SettingsDep = Annotated[Settings, Depends(get_app_settings)]
